@@ -1,24 +1,58 @@
 
+import { db } from '../db';
+import { usersTable } from '../db/schema';
 import { type RegisterInput, type AuthResponse } from '../schema';
+import { eq, or } from 'drizzle-orm';
 
 export const registerUser = async (input: RegisterInput): Promise<AuthResponse> => {
-  // This is a placeholder declaration! Real code should be implemented here.
-  // The goal of this handler is to:
-  // 1. Validate input data
-  // 2. Check if username or email already exists
-  // 3. Hash the password using bcrypt or similar
-  // 4. Insert new user into the database
-  // 5. Return success response with public user data
-  
-  return Promise.resolve({
-    success: true,
-    message: 'User registered successfully',
-    user: {
-      id: 1, // Placeholder ID
-      username: input.username,
-      email: input.email,
-      created_at: new Date(),
-      updated_at: new Date()
+  try {
+    // Check if username or email already exists
+    const existingUser = await db.select()
+      .from(usersTable)
+      .where(
+        or(
+          eq(usersTable.username, input.username),
+          eq(usersTable.email, input.email)
+        )
+      )
+      .execute();
+
+    if (existingUser.length > 0) {
+      const existingField = existingUser[0].username === input.username ? 'username' : 'email';
+      return {
+        success: false,
+        message: `User with this ${existingField} already exists`
+      };
     }
-  });
+
+    // Hash the password (using Bun's built-in password hashing)
+    const passwordHash = await Bun.password.hash(input.password);
+
+    // Insert new user
+    const result = await db.insert(usersTable)
+      .values({
+        username: input.username,
+        email: input.email,
+        password_hash: passwordHash
+      })
+      .returning()
+      .execute();
+
+    const user = result[0];
+
+    return {
+      success: true,
+      message: 'User registered successfully',
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        created_at: user.created_at,
+        updated_at: user.updated_at
+      }
+    };
+  } catch (error) {
+    console.error('User registration failed:', error);
+    throw error;
+  }
 };
